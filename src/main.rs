@@ -72,6 +72,10 @@ use crate::{
     utils::path_fixer::PathFixer,
     world_outliner::WorldOutliner,
 };
+use rg3d::material::shader::SamplerFallback;
+use rg3d::material::{Material, PropertyValue};
+use rg3d::scene::mesh::Mesh;
+use rg3d::utils::log::MessageKind;
 use rg3d::{
     core::{
         algebra::{Point3, Vector2},
@@ -82,6 +86,7 @@ use rg3d::{
     },
     dpi::LogicalSize,
     engine::resource_manager::MaterialSearchOptions,
+    engine::resource_manager::TextureImportOptions,
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     gui::{
@@ -119,6 +124,7 @@ use rg3d::{
     },
     utils::{into_gui_texture, translate_cursor_icon, translate_event},
 };
+use std::sync::Arc;
 use std::{
     fs,
     io::Write,
@@ -183,6 +189,45 @@ pub fn load_image(data: &[u8]) -> Option<draw::SharedTexture> {
     Some(into_gui_texture(
         Texture::load_from_memory(data, CompressionOptions::NoCompression).ok()?,
     ))
+}
+
+pub fn make_color_material(color: Color) -> Arc<Mutex<Material>> {
+    let mut material = Material::standard();
+    material
+        .set_property("diffuseColor", PropertyValue::Color(color))
+        .unwrap();
+    Arc::new(Mutex::new(material))
+}
+
+pub fn set_mesh_diffuse_color(mesh: &mut Mesh, color: Color) {
+    for surface in mesh.surfaces() {
+        surface
+            .material()
+            .lock()
+            .unwrap()
+            .set_property("diffuseColor", PropertyValue::Color(color))
+            .unwrap();
+    }
+}
+
+pub fn create_terrain_layer_material(mask: Texture) -> Material {
+    let mut material = Material::standard_terrain();
+    material
+        .set_property(
+            "maskTexture",
+            PropertyValue::Sampler {
+                value: Some(mask),
+                fallback: SamplerFallback::Black,
+            },
+        )
+        .unwrap();
+    material
+        .set_property(
+            "texCoordScale",
+            PropertyValue::Vector2(Vector2::new(10.0, 10.0)),
+        )
+        .unwrap();
+    material
 }
 
 pub struct ScenePreview {
@@ -1443,7 +1488,7 @@ impl Editor {
                                             {
                                                 let tex = engine
                                                     .resource_manager
-                                                    .request_texture(&relative_path);
+                                                    .request_texture(&relative_path, None);
                                                 let texture = tex.clone();
                                                 let texture = texture.state();
                                                 if let TextureState::Ok(_) = *texture {
@@ -1747,7 +1792,7 @@ impl Editor {
                         working_directory.to_string_lossy().to_string()
                     ));
 
-                    engine.resource_manager.state().purge_unused_resources();
+                    engine.resource_manager.state().destroy_unused_resources();
 
                     engine.renderer.flush();
 
@@ -2007,6 +2052,10 @@ fn main() {
 
     let mut engine = GameEngine::new(window_builder, &event_loop, true).unwrap();
 
+    engine.resource_manager.state().set_textures_import_options(
+        TextureImportOptions::default().with_compression(CompressionOptions::NoCompression),
+    );
+
     let overlay_pass = OverlayRenderPass::new(engine.renderer.pipeline_state());
     engine.renderer.add_render_pass(overlay_pass);
 
@@ -2041,7 +2090,12 @@ fn main() {
                         .unwrap();
                 }
                 WindowEvent::Resized(size) => {
-                    engine.renderer.set_frame_size(size.into());
+                    if let Err(e) = engine.renderer.set_frame_size(size.into()) {
+                        rg3d::utils::log::Log::writeln(
+                            MessageKind::Error,
+                            format!("Failed to set renderer size! Reason: {:?}", e),
+                        );
+                    }
                     engine.user_interface.send_message(WidgetMessage::width(
                         editor.root_grid,
                         MessageDirection::ToWidget,

@@ -1,4 +1,5 @@
 use crate::{
+    create_terrain_layer_material,
     gui::{Ui, UiMessage, UiNode},
     make_save_file_selector, make_scene_file_filter,
     scene::{
@@ -11,7 +12,6 @@ use crate::{
     settings::{Settings, SettingsWindow},
     GameEngine, Message,
 };
-use rg3d::scene::decal::DecalBuilder;
 use rg3d::{
     core::{
         algebra::{Matrix4, Vector2},
@@ -33,6 +33,7 @@ use rg3d::{
     scene::{
         base::BaseBuilder,
         camera::CameraBuilder,
+        decal::DecalBuilder,
         light::{
             directional::DirectionalLightBuilder, point::PointLightBuilder, spot::SpotLightBuilder,
             BaseLightBuilder,
@@ -743,13 +744,9 @@ impl Menu {
                 } else if message.destination() == self.create_terrain {
                     let node = TerrainBuilder::new(BaseBuilder::new().with_name("Terrain"))
                         .with_layers(vec![LayerDefinition {
-                            diffuse_texture: None,
-                            normal_texture: None,
-                            specular_texture: None,
-                            roughness_texture: None,
-                            height_texture: None,
-                            emission_texture: None,
-                            tile_factor: Vector2::new(10.0, 10.0),
+                            material_generator: Box::new(|_, mask| {
+                                create_terrain_layer_material(mask)
+                            }),
                         }])
                         .with_height_map_resolution(4.0)
                         .build_node();

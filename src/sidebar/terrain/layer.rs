@@ -10,6 +10,7 @@ use crate::{
     Message,
 };
 use rg3d::gui::Thickness;
+use rg3d::material::{Material, PropertyValue};
 use rg3d::{
     core::{pool::Handle, scope_profile},
     engine::resource_manager::ResourceManager,
@@ -29,7 +30,7 @@ pub struct LayerSection {
     pub section: Handle<UiNode>,
     diffuse_texture: Handle<UiNode>,
     normal_texture: Handle<UiNode>,
-    specular_texture: Handle<UiNode>,
+    metallic_texture: Handle<UiNode>,
     roughness_texture: Handle<UiNode>,
     height_texture: Handle<UiNode>,
 }
@@ -60,7 +61,7 @@ impl LayerSection {
     pub fn new(ctx: &mut BuildContext) -> Self {
         let diffuse_texture;
         let normal_texture;
-        let specular_texture;
+        let metallic_texture;
         let roughness_texture;
         let height_texture;
         let section = GridBuilder::new(
@@ -75,10 +76,10 @@ impl LayerSection {
                     normal_texture = make_texture_field(ctx, 1);
                     normal_texture
                 })
-                .with_child(make_text_mark(ctx, "Specular Texture", 2))
+                .with_child(make_text_mark(ctx, "Metallic Texture", 2))
                 .with_child({
-                    specular_texture = make_texture_field(ctx, 2);
-                    specular_texture
+                    metallic_texture = make_texture_field(ctx, 2);
+                    metallic_texture
                 })
                 .with_child(make_text_mark(ctx, "Roughness Texture", 3))
                 .with_child({
@@ -104,7 +105,7 @@ impl LayerSection {
             section,
             diffuse_texture,
             normal_texture,
-            specular_texture,
+            metallic_texture,
             roughness_texture,
             height_texture,
         }
@@ -117,11 +118,43 @@ impl LayerSection {
         );
 
         if let Some(layer) = layer {
-            send_image_sync_message(ui, self.diffuse_texture, layer.diffuse_texture.clone());
-            send_image_sync_message(ui, self.normal_texture, layer.normal_texture.clone());
-            send_image_sync_message(ui, self.specular_texture, layer.specular_texture.clone());
-            send_image_sync_message(ui, self.roughness_texture, layer.roughness_texture.clone());
-            send_image_sync_message(ui, self.height_texture, layer.height_texture.clone());
+            fn read_texture(material: &Material, name: &str) -> Option<Texture> {
+                material.property_ref(name).and_then(|t| {
+                    if let PropertyValue::Sampler { value, .. } = t {
+                        value.clone()
+                    } else {
+                        None
+                    }
+                })
+            }
+
+            let material = layer.material.lock().unwrap();
+
+            send_image_sync_message(
+                ui,
+                self.diffuse_texture,
+                read_texture(&*material, "diffuseTexture"),
+            );
+            send_image_sync_message(
+                ui,
+                self.normal_texture,
+                read_texture(&*material, "normalTexture"),
+            );
+            send_image_sync_message(
+                ui,
+                self.metallic_texture,
+                read_texture(&*material, "metallicTexture"),
+            );
+            send_image_sync_message(
+                ui,
+                self.roughness_texture,
+                read_texture(&*material, "roughnessTexture"),
+            );
+            send_image_sync_message(
+                ui,
+                self.height_texture,
+                read_texture(&*material, "heightTexture"),
+            );
         }
     }
 
@@ -144,8 +177,8 @@ impl LayerSection {
                     Some((TerrainLayerTextureKind::Diffuse, self.diffuse_texture))
                 } else if message.destination() == self.normal_texture {
                     Some((TerrainLayerTextureKind::Normal, self.normal_texture))
-                } else if message.destination() == self.specular_texture {
-                    Some((TerrainLayerTextureKind::Specular, self.specular_texture))
+                } else if message.destination() == self.metallic_texture {
+                    Some((TerrainLayerTextureKind::Metallic, self.metallic_texture))
                 } else if message.destination() == self.roughness_texture {
                     Some((TerrainLayerTextureKind::Roughness, self.roughness_texture))
                 } else if message.destination() == self.height_texture {
@@ -155,7 +188,7 @@ impl LayerSection {
                 };
 
                 if let Some((kind, field)) = kind_field {
-                    let texture = resource_manager.request_texture(relative_path);
+                    let texture = resource_manager.request_texture(relative_path, None);
 
                     sender
                         .send(Message::DoSceneCommand(

@@ -1,9 +1,10 @@
+use rg3d::renderer::framework::state::{BlendFactor, BlendFunc};
 use rg3d::{
     core::{algebra::Matrix4, math::Matrix4Ext},
     renderer::{
         framework::{
             error::FrameworkError,
-            framebuffer::{CullFace, DrawParameters},
+            framebuffer::DrawParameters,
             gpu_program::{GpuProgram, UniformLocation},
             state::PipelineState,
         },
@@ -115,15 +116,18 @@ impl SceneRenderPass for OverlayRenderPass {
                 ctx.viewport,
                 &shader.program,
                 &DrawParameters {
-                    cull_face: CullFace::Back,
-                    culling: false,
+                    cull_face: None,
                     color_write: Default::default(),
                     depth_write: false,
-                    stencil_test: false,
+                    stencil_test: None,
                     depth_test: true,
-                    blend: true,
+                    blend: Some(BlendFunc {
+                        sfactor: BlendFactor::SrcAlpha,
+                        dfactor: BlendFactor::OneMinusSrcAlpha,
+                    }),
+                    stencil_op: Default::default(),
                 },
-                |program_binding| {
+                |mut program_binding| {
                     program_binding
                         .set_matrix4(&shader.view_projection_matrix, &view_projection)
                         .set_matrix4(&shader.world_matrix, &world_matrix)

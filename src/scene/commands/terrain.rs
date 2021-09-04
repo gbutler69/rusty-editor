@@ -1,6 +1,10 @@
-use crate::{command::Command, define_node_command, get_set_swap, scene::commands::SceneContext};
+use crate::{
+    command::Command, create_terrain_layer_material, define_node_command, get_set_swap,
+    scene::commands::SceneContext,
+};
 use rg3d::{
-    core::{algebra::Vector2, pool::Handle},
+    core::pool::Handle,
+    material::{shader::SamplerFallback, PropertyValue},
     resource::texture::Texture,
     scene::{graph::Graph, node::Node, terrain::Layer},
 };
@@ -20,7 +24,7 @@ impl AddTerrainLayerCommand {
             layers: terrain
                 .chunks_ref()
                 .iter()
-                .map(|_| terrain.create_layer(Vector2::new(10.0, 10.0), 0))
+                .map(|c| terrain.create_layer(0, |mask| create_terrain_layer_material(mask)))
                 .collect(),
         }
     }
@@ -95,7 +99,7 @@ impl<'a> Command<'a> for DeleteTerrainLayerCommand {
 pub enum TerrainLayerTextureKind {
     Diffuse,
     Normal,
-    Specular,
+    Metallic,
     Roughness,
     Height,
 }
@@ -128,18 +132,41 @@ impl SetTerrainLayerTextureCommand {
         let texture = self.texture.take();
         for chunk in terrain.chunks_mut() {
             let layer = &mut chunk.layers_mut()[self.index];
-            let instance = match self.kind {
-                TerrainLayerTextureKind::Diffuse => &mut layer.diffuse_texture,
-                TerrainLayerTextureKind::Normal => &mut layer.normal_texture,
-                TerrainLayerTextureKind::Specular => &mut layer.specular_texture,
-                TerrainLayerTextureKind::Roughness => &mut layer.roughness_texture,
-                TerrainLayerTextureKind::Height => &mut layer.height_texture,
+            let property_name = match self.kind {
+                TerrainLayerTextureKind::Diffuse => "diffuseTexture",
+                TerrainLayerTextureKind::Normal => "normalTexture",
+                TerrainLayerTextureKind::Metallic => "metallicTexture",
+                TerrainLayerTextureKind::Roughness => "roughnessTexture",
+                TerrainLayerTextureKind::Height => "heightTexture",
             };
 
             if self.texture.is_none() {
-                self.texture = instance.clone();
+                self.texture = layer
+                    .material
+                    .lock()
+                    .unwrap()
+                    .property_ref(property_name)
+                    .and_then(|t| {
+                        if let PropertyValue::Sampler { value, .. } = t {
+                            value.clone()
+                        } else {
+                            None
+                        }
+                    });
             }
-            *instance = texture.clone()
+
+            layer
+                .material
+                .lock()
+                .unwrap()
+                .set_property(
+                    property_name,
+                    PropertyValue::Sampler {
+                        value: texture.clone(),
+                        fallback: SamplerFallback::White,
+                    },
+                )
+                .unwrap();
         }
     }
 }
